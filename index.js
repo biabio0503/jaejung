@@ -7,6 +7,10 @@ const fs = require("fs");
 const path = require("path");
 const app = express();
 
+// 이벤트 리스너 제한 늘리기
+process.setMaxListeners(20);
+require('events').EventEmitter.defaultMaxListeners = 20;
+
 app.use(cors());
 app.use(express.json());
 
@@ -36,6 +40,16 @@ try {
   console.log("✅ Firebase Admin 초기화 완료");
 } catch (error) {
   console.log("⚠️ Firebase Admin 초기화 실패:", error.message);
+}
+
+// Firebase Admin 이벤트 리스너 제한 늘리기
+if (firebaseApp) {
+  try {
+    const messaging = admin.messaging();
+    messaging.setMaxListeners(20);
+  } catch (e) {
+    console.log("⚠️ Firebase messaging 리스너 설정 실패:", e.message);
+  }
 }
 
 // APNs 프로바이더 초기화
@@ -203,7 +217,7 @@ app.get("/", (_, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`🚀 서버 실행 중 on ${PORT}`);
   console.log(`📱 APNs 설정:`, {
     keyId: apnsOptions.token.keyId,
@@ -216,3 +230,6 @@ app.listen(PORT, () => {
     initialized: firebaseApp ? "성공" : "실패"
   });
 });
+
+// 서버 이벤트 리스너 제한 늘리기
+server.setMaxListeners(20);
