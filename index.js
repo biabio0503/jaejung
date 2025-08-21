@@ -2,6 +2,7 @@ const express = require("express");
 const fetch = require("node-fetch");
 const cors = require("cors");
 const apn = require("apn");
+const admin = require("firebase-admin");
 const fs = require("fs");
 const path = require("path");
 const app = express();
@@ -11,6 +12,7 @@ app.use(express.json());
 
 const tokens = new Set();
 const apnsTokens = new Set();
+const fcmTokens = new Set();
 
 // APNs 설정
 const apnsOptions = {
@@ -23,6 +25,18 @@ const apnsOptions = {
 };
 
 let apnsProvider = null;
+
+// Firebase Admin 초기화
+let firebaseApp = null;
+try {
+  firebaseApp = admin.initializeApp({
+    credential: admin.credential.applicationDefault(),
+    projectId: "jaejung-a5d25"
+  });
+  console.log("✅ Firebase Admin 초기화 완료");
+} catch (error) {
+  console.log("⚠️ Firebase Admin 초기화 실패:", error.message);
+}
 
 // APNs 프로바이더 초기화
 function initAPNs() {
@@ -65,15 +79,28 @@ app.post("/save-apns-token", (req, res) => {
   }
 });
 
-// 3️⃣ 저장된 토큰 확인용 (디버깅)
+// 3️⃣ FCM 토큰 저장
+app.post("/save-fcm-token", (req, res) => {
+  const { token } = req.body;
+  if (token) {
+    fcmTokens.add(token);
+    console.log("�� FCM 토큰 등록:", token);
+    res.status(200).send("FCM 토큰 저장 완료");
+  } else {
+    res.status(400).send("FCM 토큰이 필요합니다");
+  }
+});
+
+// 4️⃣ 저장된 토큰 확인용 (디버깅)
 app.get("/tokens", (_, res) => {
   res.json({
     expo: Array.from(tokens),
-    apns: Array.from(apnsTokens)
+    apns: Array.from(apnsTokens),
+    fcm: Array.from(fcmTokens)
   });
 });
 
-// 4️⃣ 알림 발송 (Expo + APNs)
+// 5️⃣ 알림 발송 (Expo + APNs + FCM)
 app.post("/notify", async (req, res) => {
   const { title, body } = req.body;
   const results = [];
@@ -121,17 +148,56 @@ app.post("/notify", async (req, res) => {
     }
   }
 
+  // FCM 발송
+  if (firebaseApp && fcmTokens.size > 0) {
+    const message = {
+      notification: {
+        title: title,
+        body: body
+      },
+      android: {
+        notification: {
+          sound: 'default',
+          channel_id: 'default'
+        }
+      },
+      apns: {
+        payload: {
+          aps: {
+            sound: 'default'
+          }
+        }
+      }
+    };
+
+    for (const token of fcmTokens) {
+      try {
+        const result = await admin.messaging().send({
+          ...message,
+          token: token
+        });
+        console.log("🤖 FCM 푸시 응답:", result);
+        results.push({ type: "fcm", token, result });
+      } catch (error) {
+        console.error("❌ FCM 푸시 실패:", error);
+        results.push({ type: "fcm", token, error: error.message });
+      }
+    }
+  }
+
   res.send({ status: "ok", results });
 });
 
-// 5️⃣ 서버 상태 확인용
+// 6️⃣ 서버 상태 확인용
 app.get("/", (_, res) => {
   res.json({
-    message: "📡 Expo + APNs 푸시 알림 서버 작동 중!",
+    message: "📡 Expo + APNs + FCM 푸시 알림 서버 작동 중!",
     stats: {
       expoTokens: tokens.size,
       apnsTokens: apnsTokens.size,
-      apnsProvider: apnsProvider ? "초기화됨" : "초기화 안됨"
+      fcmTokens: fcmTokens.size,
+      apnsProvider: apnsProvider ? "초기화됨" : "초기화 안됨",
+      firebaseApp: firebaseApp ? "초기화됨" : "초기화 안됨"
     }
   });
 });
@@ -144,5 +210,9 @@ app.listen(PORT, () => {
     teamId: apnsOptions.token.teamId,
     production: apnsOptions.production,
     bundleId: process.env.APNS_BUNDLE_ID
+  });
+  console.log(`🤖 Firebase 설정:`, {
+    projectId: "jaejung-a5d25",
+    initialized: firebaseApp ? "성공" : "실패"
   });
 });
