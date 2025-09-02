@@ -501,4 +501,4 @@ const server = app.listen(PORT, () => {
 });
 
 // 서버 이벤트 리스너 제한
-server.setMaxListeners(20);
+server.setMaxListeners(50);
